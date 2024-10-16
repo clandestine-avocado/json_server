@@ -31,6 +31,8 @@
         .search-container { margin-bottom: 10px; }
         .search-container input[type="text"] { width: 70%; padding: 5px; }
         .search-container button { padding: 5px 10px; margin-left: 5px; }
+        .field-checkboxes { margin-top: 10px; }
+        .field-checkboxes label { margin-right: 10px; }
     </style>
 </head>
 <body>
@@ -48,6 +50,7 @@
             <button onclick="search()">Search</button>
             <button onclick="clearSearch()">Clear</button>
         </div>
+        <div id="search-field-checkboxes" class="field-checkboxes"></div>
         <div id="error"></div>
         <div id="results"></div>
     </div>
@@ -59,6 +62,7 @@
             <button onclick="searchTable()">Search</button>
             <button onclick="clearTableSearch()">Clear</button>
         </div>
+        <div id="table-field-checkboxes" class="field-checkboxes"></div>
         <div id="table-container" class="table-container"></div>
     </div>
 
@@ -71,6 +75,7 @@
 
     <script>
         let allData = [];
+        let allFields = [];
 
         function openTab(evt, tabName) {
             var i, tabcontent, tablinks;
@@ -120,6 +125,7 @@
             const query = document.getElementById('search-input').value;
             const errorDiv = document.getElementById('error');
             const resultsDiv = document.getElementById('results');
+            const checkedFields = getCheckedFields('search-field-checkboxes');
             
             errorDiv.textContent = '';
             resultsDiv.innerHTML = 'Searching...';
@@ -134,10 +140,15 @@
                 .then(data => {
                     console.log('Received data:', data);
                     resultsDiv.innerHTML = '';
-                    if (data.length === 0) {
+                    const filteredData = data.filter(item => {
+                        return checkedFields.some(field => 
+                            String(item.data[field]).toLowerCase().includes(query.toLowerCase())
+                        );
+                    });
+                    if (filteredData.length === 0) {
                         resultsDiv.textContent = 'No results found.';
                     } else {
-                        data.forEach(item => {
+                        filteredData.forEach(item => {
                             const div = document.createElement('div');
                             div.className = 'result';
                             const filename = document.createElement('div');
@@ -169,9 +180,37 @@
                 .then(response => response.json())
                 .then(data => {
                     allData = data;
+                    allFields = ['filename', ...new Set(data.flatMap(item => Object.keys(item.data)))];
+                    createFieldCheckboxes('search-field-checkboxes');
+                    createFieldCheckboxes('table-field-checkboxes');
                     renderTable(allData);
                 })
                 .catch(error => console.error('Error:', error));
+        }
+
+        function createFieldCheckboxes(containerId) {
+            const container = document.getElementById(containerId);
+            container.innerHTML = '';
+            allFields.forEach(field => {
+                const label = document.createElement('label');
+                const checkbox = document.createElement('input');
+                checkbox.type = 'checkbox';
+                checkbox.value = field;
+                checkbox.checked = true;
+                checkbox.onchange = () => {
+                    if (containerId === 'table-field-checkboxes') {
+                        renderTable(allData);
+                    }
+                };
+                label.appendChild(checkbox);
+                label.appendChild(document.createTextNode(field));
+                container.appendChild(label);
+            });
+        }
+
+        function getCheckedFields(containerId) {
+            return Array.from(document.querySelectorAll(`#${containerId} input:checked`))
+                .map(checkbox => checkbox.value);
         }
 
         function renderTable(data) {
@@ -181,10 +220,11 @@
             const thead = document.createElement('thead');
             const tbody = document.createElement('tbody');
             
+            const checkedFields = getCheckedFields('table-field-checkboxes');
+            
             // Create header
             const headerRow = document.createElement('tr');
-            const headers = ['Filename', ...new Set(data.flatMap(item => Object.keys(item.data)))];
-            headers.forEach(header => {
+            checkedFields.forEach(header => {
                 const th = document.createElement('th');
                 th.textContent = header;
                 headerRow.appendChild(th);
@@ -197,13 +237,9 @@
                 const row = document.createElement('tr');
                 row.onclick = () => showModal(item);
                 
-                const filenameCell = document.createElement('td');
-                filenameCell.textContent = item.filename;
-                row.appendChild(filenameCell);
-
-                headers.slice(1).forEach(header => {
+                checkedFields.forEach(field => {
                     const cell = document.createElement('td');
-                    cell.textContent = item.data[header] || '';
+                    cell.textContent = field === 'filename' ? item.filename : (item.data[field] || '');
                     row.appendChild(cell);
                 });
 
@@ -216,10 +252,12 @@
 
         function searchTable() {
             const query = document.getElementById('table-search-input').value.toLowerCase();
+            const checkedFields = getCheckedFields('table-field-checkboxes');
             const filteredData = allData.filter(item => 
-                Object.values(item.data).some(value => 
-                    String(value).toLowerCase().includes(query)
-                ) || item.filename.toLowerCase().includes(query)
+                checkedFields.some(field => {
+                    const value = field === 'filename' ? item.filename : item.data[field];
+                    return String(value).toLowerCase().includes(query);
+                })
             );
             renderTable(filteredData);
         }
@@ -247,6 +285,19 @@
                 modal.style.display = 'none';
             }
         }
+
+        // Add event listeners for Enter key
+        document.getElementById('search-input').addEventListener('keyup', function(event) {
+            if (event.key === 'Enter') {
+                search();
+            }
+        });
+
+        document.getElementById('table-search-input').addEventListener('keyup', function(event) {
+            if (event.key === 'Enter') {
+                searchTable();
+            }
+        });
 
         // Open the default tab
         document.getElementById("defaultOpen").click();
