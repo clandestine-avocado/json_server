@@ -3,35 +3,253 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>JSON Search</title>
+    <title>JSON Data Explorer</title>
     <style>
-        body { font-family: Arial, sans-serif; max-width: 800px; margin: 0 auto; padding: 20px; }
-        #results { margin-top: 20px; }
-        .result { border: 1px solid #ddd; padding: 10px; margin-bottom: 10px; }
+        body { font-family: Arial, sans-serif; max-width: 1200px; margin: 0 auto; padding: 20px; }
+        .tab { overflow: hidden; border: 1px solid #ccc; background-color: #f1f1f1; }
+        .tab button { background-color: inherit; float: left; border: none; outline: none; cursor: pointer; padding: 14px 16px; transition: 0.3s; }
+        .tab button:hover { background-color: #ddd; }
+        .tab button.active { background-color: #ccc; }
+        .tabcontent { display: none; padding: 6px 12px; border: 1px solid #ccc; border-top: none; }
+        #results, #error { margin-top: 20px; }
+        .result { border: 1px solid #ddd; padding: 20px; margin-bottom: 20px; background-color: #f9f9f9; }
+        .filename { font-weight: bold; margin-bottom: 15px; font-size: 1.2em; color: #333; }
+        #error { color: red; }
+        .json-item { margin-bottom: 10px; }
+        .json-key { font-weight: bold; }
+        .json-value { margin-left: 20px; }
+        .table-container { overflow-x: auto; }
+        table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+        th, td { border: 1px solid #ddd; padding: 8px; text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        th { background-color: #f2f2f2; }
+        tr:nth-child(even) { background-color: #f9f9f9; }
+        tr:hover { background-color: #f5f5f5; cursor: pointer; }
+        .modal { display: none; position: fixed; z-index: 1; left: 0; top: 0; width: 100%; height: 100%; overflow: auto; background-color: rgba(0,0,0,0.4); }
+        .modal-content { background-color: #fefefe; margin: 15% auto; padding: 20px; border: 1px solid #888; width: 80%; max-height: 70vh; overflow-y: auto; }
+        .close { color: #aaa; float: right; font-size: 28px; font-weight: bold; }
+        .close:hover, .close:focus { color: black; text-decoration: none; cursor: pointer; }
+        .search-container { margin-bottom: 10px; }
+        .search-container input[type="text"] { width: 70%; padding: 5px; }
+        .search-container button { padding: 5px 10px; margin-left: 5px; }
     </style>
 </head>
 <body>
-    <h1>JSON Search</h1>
-    <input type="text" id="search-input" placeholder="Enter search query">
-    <button onclick="search()">Search</button>
-    <div id="results"></div>
+    <h1>JSON Data Explorer</h1>
+    
+    <div class="tab">
+        <button class="tablinks" onclick="openTab(event, 'SearchTab')" id="defaultOpen">Search</button>
+        <button class="tablinks" onclick="openTab(event, 'TableTab')">Table View</button>
+    </div>
+
+    <div id="SearchTab" class="tabcontent">
+        <h2>Search JSON Data</h2>
+        <div class="search-container">
+            <input type="text" id="search-input" placeholder="Enter search query">
+            <button onclick="search()">Search</button>
+            <button onclick="clearSearch()">Clear</button>
+        </div>
+        <div id="error"></div>
+        <div id="results"></div>
+    </div>
+
+    <div id="TableTab" class="tabcontent">
+        <h2>Table View</h2>
+        <div class="search-container">
+            <input type="text" id="table-search-input" placeholder="Search table">
+            <button onclick="searchTable()">Search</button>
+            <button onclick="clearTableSearch()">Clear</button>
+        </div>
+        <div id="table-container" class="table-container"></div>
+    </div>
+
+    <div id="jsonModal" class="modal">
+        <div class="modal-content">
+            <span class="close">&times;</span>
+            <div id="modal-content"></div>
+        </div>
+    </div>
 
     <script>
+        let allData = [];
+
+        function openTab(evt, tabName) {
+            var i, tabcontent, tablinks;
+            tabcontent = document.getElementsByClassName("tabcontent");
+            for (i = 0; i < tabcontent.length; i++) {
+                tabcontent[i].style.display = "none";
+            }
+            tablinks = document.getElementsByClassName("tablinks");
+            for (i = 0; i < tablinks.length; i++) {
+                tablinks[i].className = tablinks[i].className.replace(" active", "");
+            }
+            document.getElementById(tabName).style.display = "block";
+            evt.currentTarget.className += " active";
+
+            if (tabName === 'TableTab' && allData.length === 0) {
+                loadAllData();
+            }
+        }
+
+        function renderJSON(obj, container) {
+            for (let key in obj) {
+                const item = document.createElement('div');
+                item.className = 'json-item';
+                const keyElem = document.createElement('span');
+                keyElem.className = 'json-key';
+                keyElem.textContent = key + ': ';
+                item.appendChild(keyElem);
+
+                const valueElem = document.createElement('span');
+                valueElem.className = 'json-value';
+
+                if (typeof obj[key] === 'object' && obj[key] !== null) {
+                    const nestedContainer = document.createElement('div');
+                    nestedContainer.style.marginLeft = '20px';
+                    renderJSON(obj[key], nestedContainer);
+                    valueElem.appendChild(nestedContainer);
+                } else {
+                    valueElem.textContent = obj[key];
+                }
+
+                item.appendChild(valueElem);
+                container.appendChild(item);
+            }
+        }
+
         function search() {
             const query = document.getElementById('search-input').value;
+            const errorDiv = document.getElementById('error');
+            const resultsDiv = document.getElementById('results');
+            
+            errorDiv.textContent = '';
+            resultsDiv.innerHTML = 'Searching...';
+            
             fetch(`/search?q=${encodeURIComponent(query)}`)
-                .then(response => response.json())
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error(`HTTP error! status: ${response.status}`);
+                    }
+                    return response.json();
+                })
                 .then(data => {
-                    const resultsDiv = document.getElementById('results');
+                    console.log('Received data:', data);
                     resultsDiv.innerHTML = '';
-                    data.forEach(item => {
-                        const div = document.createElement('div');
-                        div.className = 'result';
-                        div.textContent = JSON.stringify(item, null, 2);
-                        resultsDiv.appendChild(div);
-                    });
+                    if (data.length === 0) {
+                        resultsDiv.textContent = 'No results found.';
+                    } else {
+                        data.forEach(item => {
+                            const div = document.createElement('div');
+                            div.className = 'result';
+                            const filename = document.createElement('div');
+                            filename.className = 'filename';
+                            filename.textContent = item.filename;
+                            div.appendChild(filename);
+                            const content = document.createElement('div');
+                            renderJSON(item.data, content);
+                            div.appendChild(content);
+                            resultsDiv.appendChild(div);
+                        });
+                    }
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                    errorDiv.textContent = `Error: ${error.message}`;
+                    resultsDiv.innerHTML = '';
                 });
         }
+
+        function clearSearch() {
+            document.getElementById('search-input').value = '';
+            document.getElementById('error').textContent = '';
+            document.getElementById('results').innerHTML = '';
+        }
+
+        function loadAllData() {
+            fetch('/search?q=')
+                .then(response => response.json())
+                .then(data => {
+                    allData = data;
+                    renderTable(allData);
+                })
+                .catch(error => console.error('Error:', error));
+        }
+
+        function renderTable(data) {
+            const container = document.getElementById('table-container');
+            container.innerHTML = '';
+            const table = document.createElement('table');
+            const thead = document.createElement('thead');
+            const tbody = document.createElement('tbody');
+            
+            // Create header
+            const headerRow = document.createElement('tr');
+            const headers = ['Filename', ...new Set(data.flatMap(item => Object.keys(item.data)))];
+            headers.forEach(header => {
+                const th = document.createElement('th');
+                th.textContent = header;
+                headerRow.appendChild(th);
+            });
+            thead.appendChild(headerRow);
+            table.appendChild(thead);
+
+            // Create rows
+            data.forEach(item => {
+                const row = document.createElement('tr');
+                row.onclick = () => showModal(item);
+                
+                const filenameCell = document.createElement('td');
+                filenameCell.textContent = item.filename;
+                row.appendChild(filenameCell);
+
+                headers.slice(1).forEach(header => {
+                    const cell = document.createElement('td');
+                    cell.textContent = item.data[header] || '';
+                    row.appendChild(cell);
+                });
+
+                tbody.appendChild(row);
+            });
+
+            table.appendChild(tbody);
+            container.appendChild(table);
+        }
+
+        function searchTable() {
+            const query = document.getElementById('table-search-input').value.toLowerCase();
+            const filteredData = allData.filter(item => 
+                Object.values(item.data).some(value => 
+                    String(value).toLowerCase().includes(query)
+                ) || item.filename.toLowerCase().includes(query)
+            );
+            renderTable(filteredData);
+        }
+
+        function clearTableSearch() {
+            document.getElementById('table-search-input').value = '';
+            renderTable(allData);
+        }
+
+        function showModal(item) {
+            const modal = document.getElementById('jsonModal');
+            const modalContent = document.getElementById('modal-content');
+            modalContent.innerHTML = '';
+            const filename = document.createElement('h3');
+            filename.textContent = item.filename;
+            modalContent.appendChild(filename);
+            renderJSON(item.data, modalContent);
+            modal.style.display = 'block';
+        }
+
+        // Close modal when clicking on x or outside the modal
+        window.onclick = function(event) {
+            const modal = document.getElementById('jsonModal');
+            if (event.target == modal || event.target.className == 'close') {
+                modal.style.display = 'none';
+            }
+        }
+
+        // Open the default tab
+        document.getElementById("defaultOpen").click();
     </script>
 </body>
 </html>
