@@ -4,7 +4,7 @@ from http.server import HTTPServer, SimpleHTTPRequestHandler
 from urllib.parse import urlparse, parse_qs
 
 # Directory containing JSON files
-JSON_DIR = "C:\Users\kroy2\Documents\python\projects\json_generate_test_files\data"
+JSON_DIR = r"C:\Users\kroy2\Documents\python\projects\json_generate_test_files\data"
 
 class SearchHandler(SimpleHTTPRequestHandler):
     def do_GET(self):
